@@ -15,11 +15,14 @@ async function main() {
     // Load operator credentials
     const operatorId = AccountId.fromString(process.env.MY_ACCOUNT_ID);
     const operatorKey = PrivateKey.fromString(process.env.MY_PRIVATE_KEY);
+    const network = process.env.HEDERA_NETWORK || "testnet";
 
-    // Connect to Hedera Testnet
-    const client = Client.forTestnet().setOperator(operatorId, operatorKey);
+    // Connect to Hedera
+    const client = network === "mainnet" ? Client.forMainnet() : Client.forTestnet();
+    client.setOperator(operatorId, operatorKey);
+    client.setDefaultMaxTransactionFee(new Hbar(5)); // safety cap
 
-    console.log("🚀 Creating HushSense Token...");
+    console.log(`🚀 Creating HushSense Token on ${network}...`);
 
     // Load metadata from .env
     const metadataCID = process.env.TOKEN_METADATA_CID;
@@ -30,8 +33,8 @@ async function main() {
         .setTokenSymbol("HUSH")
         .setTokenType(TokenType.FungibleCommon)
         .setDecimals(0)
-        .setInitialSupply(10000000)
-        .setMaxSupply(50000000000)
+        .setInitialSupply(10_000_000)
+        .setMaxSupply(50_000_000_000)
         .setTreasuryAccountId(operatorId)
         .setAdminKey(operatorKey.publicKey)
         .setSupplyKey(operatorKey.publicKey)
@@ -42,7 +45,7 @@ async function main() {
         .setMetadata(Buffer.from(metadataCID))
         .setAutoRenewAccountId(operatorId)
         .setAutoRenewPeriod(7890000) // ~91 days
-        .setMaxTransactionFee(new Hbar(30))
+        .setMaxTransactionFee(new Hbar(10)) // per-tx cap
         .freezeWith(client)
         .sign(operatorKey);
 

@@ -33,7 +33,7 @@ async function main() {
 
   // 🎨 Create the NFT Collection
   const tx = await new TokenCreateTransaction()
-    .setTokenName("testNFT_Collection1")
+    .setTokenName("HUSHSENSE NFT Collection")
     .setTokenSymbol("HSNFT")
     .setTokenType(TokenType.NonFungibleUnique)
     .setSupplyType(TokenSupplyType.Infinite) // can mint unlimited NFTs
