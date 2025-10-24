@@ -6,60 +6,80 @@ import {
     TokenSupplyType,
     Hbar,
     AccountId,
+    ContractId, // This import is correct
 } from "@hashgraph/sdk";
 import dotenv from "dotenv";
 
 dotenv.config();
 
+// Load IDs from .env
+const CONTRACT_ID = process.env.HUSHSENSE_MANAGER_CONTRACT_ID;
+const ACCOUNT_ID = process.env.MY_ACCOUNT_ID;
+const PRIVATE_KEY = process.env.MY_PRIVATE_KEY;
+const NETWORK = process.env.HEDERA_NETWORK || "mainnet";
+
 async function main() {
+    if (!ACCOUNT_ID || !PRIVATE_KEY || !CONTRACT_ID) {
+        throw new Error(
+            "Missing critical .env variables. Check MY_ACCOUNT_ID, MY_PRIVATE_KEY, and HUSHSENSE_MANAGER_CONTRACT_ID."
+        );
+    }
+
     // Load operator credentials
-    const operatorId = AccountId.fromString(process.env.MY_ACCOUNT_ID);
-    const operatorKey = PrivateKey.fromString(process.env.MY_PRIVATE_KEY);
-    const network = process.env.HEDERA_NETWORK || "testnet";
-
-    // Connect to Hedera
-    const client = network === "mainnet" ? Client.forMainnet() : Client.forTestnet();
+    const operatorId = AccountId.fromString(ACCOUNT_ID);
+    const operatorKey = PrivateKey.fromString(PRIVATE_KEY); // Using MY_PRIVATE_KEY as requested
+    const client = NETWORK === "mainnet" ? Client.forMainnet() : Client.forTestnet();
+    
     client.setOperator(operatorId, operatorKey);
-    client.setDefaultMaxTransactionFee(new Hbar(5)); // safety cap
+    client.setDefaultMaxTransactionFee(new Hbar(5));
 
-    console.log(`🚀 Creating HushSense Token on ${network}...`);
+    console.log(`🚀 Creating HushSense HTS Token on ${NETWORK}...`);
+    console.log(`Setting Supply Key to Contract: ${CONTRACT_ID}`);
 
-    // Load metadata from .env
+    // Load metadata (optional)
     const metadataCID = process.env.TOKEN_METADATA_CID;
 
-    // Create fungible token
     const tx = await new TokenCreateTransaction()
         .setTokenName("HushSense")
         .setTokenSymbol("HUSH")
         .setTokenType(TokenType.FungibleCommon)
         .setDecimals(0)
-        .setInitialSupply(10_000_000)
-        .setMaxSupply(50_000_000_000)
-        .setTreasuryAccountId(operatorId)
-        .setAdminKey(operatorKey.publicKey)
-        .setSupplyKey(operatorKey.publicKey)
-        .setWipeKey(operatorKey.publicKey)
-        .setPauseKey(operatorKey.publicKey)
-        .setFreezeKey(operatorKey.publicKey)
+        .setInitialSupply(10_000_000) // 10 Million
+        .setMaxSupply(50_000_000_000) // 50 Billion
         .setSupplyType(TokenSupplyType.Finite)
-        .setMetadata(Buffer.from(metadataCID))
+        .setTreasuryAccountId(operatorId) // account holds the initial supply
         .setAutoRenewAccountId(operatorId)
         .setAutoRenewPeriod(7890000) // ~91 days
-        .setMaxTransactionFee(new Hbar(10)) // per-tx cap
-        .freezeWith(client)
-        .sign(operatorKey);
+        .setMaxTransactionFee(new Hbar(10)) 
 
-    const submitTx = await tx.execute(client);
+        //account is the Admin (can delete token, update keys)
+        .setAdminKey(operatorKey.publicKey)
+        
+        // The CONTRACT controls minting/burning
+        .setSupplyKey(ContractId.fromString(CONTRACT_ID)) 
+        
+        .setPauseKey(ContractId.fromString(CONTRACT_ID)) 
+
+        .setFreezeKey(null)
+        .setWipeKey(null)
+        .setKycKey(null);
+
+    if (metadataCID) {
+        tx.setMetadata(Buffer.from(metadataCID));
+    }
+        
+    const frozenTx = await tx.freezeWith(client).sign(operatorKey);
+    const submitTx = await frozenTx.execute(client);
     const receipt = await submitTx.getReceipt(client);
     const tokenId = receipt.tokenId;
 
-    console.log("✅ Token created successfully!");
+    console.log("✅ HTS Token created successfully!");
     console.log("🆔 Token ID:", tokenId.toString());
-    console.log("📦 Metadata CID:", metadataCID);
-    console.log("🔑 Admin key set. Token can be updated/deleted in the future.");
-    console.log("⏳ Auto-renew set to treasury account. Keep HBAR there to avoid expiry.");
+    console.log("🆔 Token Solidity Address:", tokenId.toSolidityAddress());
+    console.log("🔐 Admin Key: Your operator key.");
+    console.log("Supply & Pause Key: Contract " + CONTRACT_ID);
 }
 
 main().catch(err => {
-    console.error("❌ Error:", err);
+    console.error("❌ Error:", err.message);
 });
